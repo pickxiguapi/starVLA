@@ -11,12 +11,7 @@ import torch, os
 
 
 def main(args) -> None:
-    # Example usage:
-    # policy = YourPolicyClass()  # Replace with your actual policy class
-    # server = WebsocketPolicyServer(policy, host="localhost", port=10091)
-    # server.serve_forever()
-
-    vla = baseframework.from_pretrained( # TODO should auto detect framework from model path
+    vla = baseframework.from_pretrained(  # TODO should auto detect framework from model path
         args.ckpt_path,
     )
 
@@ -34,7 +29,7 @@ def main(args) -> None:
         host="0.0.0.0",
         port=args.port,
         idle_timeout=args.idle_timeout,
-        metadata={"env": "simpler_env"},
+        metadata={"env": "libero_env"},
     )
     logging.info("server running ...")
     server.serve_forever()

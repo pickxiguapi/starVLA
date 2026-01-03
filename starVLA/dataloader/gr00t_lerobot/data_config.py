@@ -437,7 +437,7 @@ class SingleFrankaRobotiqDeltaEefDataConfig:
 
 class Libero4in1DataConfig:
     video_keys = [
-        "video.primary_image",
+        "video.image",
         "video.wrist_image",
     ]
     
@@ -448,7 +448,7 @@ class Libero4in1DataConfig:
         "state.roll",
         "state.pitch",
         "state.yaw",
-        "state.pad",
+        "state.gripper",
         "state.gripper",
     ]
     action_keys = [

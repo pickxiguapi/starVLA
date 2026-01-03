@@ -27,7 +27,7 @@ class WebsocketPolicyServer:
         port: int = 10093,
         idle_timeout: int = -1,  # 新增参数，单位秒，-1表示永不关闭
         metadata: dict | None = None,
-        
+
     ) -> None:
         self._policy = policy  #
         self._host = host
