@@ -220,7 +220,7 @@ class FlowmatchingActionHead(nn.Module):
     ):
         super().__init__()
         config = full_config.framework.action_model
-        self.hidden_size = config.hidden_size # 是不要和 Q对齐？
+        self.hidden_size = config.hidden_size # @JinhuiYE
         self.full_config = full_config
         action_model_type = config.action_model_type
         action_model_cfg = DiTConfig[action_model_type]
@@ -244,7 +244,7 @@ class FlowmatchingActionHead(nn.Module):
             hidden_size=self.input_embedding_dim,
         )
         self.action_decoder = MLP(
-            input_dim=self.hidden_size,
+            input_dim=self.model.config.output_dim,
             hidden_dim=self.hidden_size,
             output_dim=self.action_dim,
         )
@@ -267,7 +267,7 @@ class FlowmatchingActionHead(nn.Module):
         return BatchFeature(data=batch)
 
 
-    def forward(self, vl_embs: torch.Tensor, actions: torch.Tensor, state: torch.Tensor = None):
+    def forward(self, vl_embs: torch.Tensor, actions: torch.Tensor, state: torch.Tensor = None, encoder_attention_mask=None):
         """
         vl_embs: shape (B, seq_length, feature_dim)
         actions: shape (B, future_action_window_size, D_action)
@@ -306,6 +306,7 @@ class FlowmatchingActionHead(nn.Module):
         model_output = self.model(
             hidden_states=sa_embs,
             encoder_hidden_states=vl_embs,
+            encoder_attention_mask=encoder_attention_mask,
             timestep=t_discretized,
             return_all_hidden_states=False,  # NOTE (YL): not using flare now
         )
@@ -321,7 +322,7 @@ class FlowmatchingActionHead(nn.Module):
         # Set initial actions as the sampled noise.
         batch_size = vl_embs.shape[0]
         device = vl_embs.device
-        actions = torch.randn(
+        actions = torch.randn( # yes, here make sure action_horizon align with data loader? or share from clinet?
             size=(batch_size, self.config.action_horizon, self.config.action_dim),
             dtype=vl_embs.dtype,
             device=device,

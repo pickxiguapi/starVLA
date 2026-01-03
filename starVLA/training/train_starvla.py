@@ -20,6 +20,7 @@ from typing import Tuple
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import time
+import re
 
 # Third-Party Libraries
 import torch
@@ -38,6 +39,7 @@ from starVLA.training.trainer_utils.trainer_tools import normalize_dotlist_args
 from starVLA.model.framework import build_framework
 from starVLA.training.trainer_utils.trainer_tools import TrainerUtils
 from starVLA.training.trainer_utils.trainer_tools import build_param_lr_groups
+from starVLA.training.trainer_utils.config_tracker import wrap_config, AccessTrackedConfig
 
 deepspeed_plugin = DeepSpeedPlugin()
 accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
@@ -68,11 +70,11 @@ def setup_directories(cfg) -> Path:
         os.makedirs(output_dir, exist_ok=True)
         os.makedirs(output_dir / "checkpoints", exist_ok=True)
 
-        # save config
-        OmegaConf.save(cfg, output_dir / "config.yaml")
-        with open(output_dir / "config.yaml", "r") as f_yaml, open(output_dir / "config.json", "w") as f_json:
-            yaml_cfg = yaml.safe_load(f_yaml)
-            json.dump(yaml_cfg, f_json, indent=2)
+        # # save config
+        # OmegaConf.save(cfg, output_dir / "config.yaml")
+        # with open(output_dir / "config.yaml", "r") as f_yaml, open(output_dir / "config.json", "w") as f_json:
+        #     yaml_cfg = yaml.safe_load(f_yaml)
+        #     json.dump(yaml_cfg, f_json, indent=2)
 
     return output_dir
 
@@ -142,19 +144,17 @@ class VLATrainer(TrainerUtils):
         # training status tracking
         self.completed_steps = 0
         self.total_batch_size = self._calculate_total_batch_size()
-
+    
     def prepare_training(self):
         rank = dist.get_rank() if dist.is_initialized() else 0
         seed = self.config.seed + rank if hasattr(self.config, "seed") else rank + 3047
         set_seed(seed)
 
         # load pretrained weights
-        if hasattr(self.config.trainer, "pretrained_checkpoint") and self.config.trainer.pretrained_checkpoint:
-            pretrained_checkpoint = self.config.trainer.pretrained_checkpoint
-            reload_modules = (
-                self.config.trainer.reload_modules if hasattr(self.config.trainer, "reload_modules") else None
-            )
-            self.model = self.load_pretrained_backbones(self.model, pretrained_checkpoint, reload_modules=reload_modules)
+        self._init_checkpointing() # TODO merge with load pretrained weights
+
+        # 根据  resume 调整 lr_scheduler
+        self._adjust_lr_scheduler_for_resume()
 
         # freeze parameters
         freeze_modules = (
@@ -173,11 +173,25 @@ class VLATrainer(TrainerUtils):
             self.model,
             self.optimizer,
             self.vla_train_dataloader,
-            # self.vlm_train_dataloader
         )
 
         self._init_wandb()
-        self._init_checkpointing()
+
+
+    def _adjust_lr_scheduler_for_resume(self):
+        """根据已完成的步数调整学习率调度器状态"""
+        if self.completed_steps > 0:
+            logger.info(f"Adjusting LR scheduler for resume from step {self.completed_steps}")
+            
+            # 方法1: 直接模拟已完成的步数（适用于大多数调度器）
+            for _ in range(self.completed_steps):
+                self.lr_scheduler.step()
+            
+            # 或者方法2: 对于某些调度器，可以直接设置最后步数
+            # if hasattr(self.lr_scheduler, '_step_count'):
+            #     self.lr_scheduler._step_count = self.completed_steps
+            
+            logger.info(f"LR scheduler adjusted to step {self.completed_steps}, current LR: {self.lr_scheduler.get_last_lr()}")
 
     def _calculate_total_batch_size(self):
         """calculate global batch size"""
@@ -199,16 +213,43 @@ class VLATrainer(TrainerUtils):
             )
 
     def _init_checkpointing(self):
-        """initialize checkpoint directory"""
+        """Initialize checkpoint directory and handle checkpoint loading."""
         self.checkpoint_dir = os.path.join(self.config.output_dir, "checkpoints")
         os.makedirs(self.checkpoint_dir, exist_ok=True)
 
+        # 获取预训练检查点和是否恢复训练的标志
         pretrained_checkpoint = getattr(self.config.trainer, "pretrained_checkpoint", None)
         is_resume = getattr(self.config.trainer, "is_resume", False)
+        self.resume_from_checkpoint = pretrained_checkpoint
+        # TODO retinking resume and load from pretrained_checkpoint
+        if is_resume:
+            # 恢复训练状态
+            resume_from_checkpoint, self.completed_steps = self._get_latest_checkpoint(self.checkpoint_dir)
+            
+            if resume_from_checkpoint:
+                self.resume_from_checkpoint = resume_from_checkpoint
+                self.model = self.load_pretrained_backbones(self.model, self.resume_from_checkpoint, reload_modules=None)
+                logger.info(f"Resuming training from checkpoint: {self.resume_from_checkpoint}, steps: {self.completed_steps}")
+                return None
+            else:
+                logger.warning(f"No valid checkpoint found in {self.checkpoint_dir}. Starting training from scratch.")
+                self.completed_steps = 0
 
-        # resume training state
-        if pretrained_checkpoint and is_resume:
-            self._load_checkpoint(self.config.resume_from_checkpoint)
+        # 加载预训练权重
+        if pretrained_checkpoint:
+            reload_modules = getattr(self.config.trainer, "reload_modules", None)
+            self.model = self.load_pretrained_backbones(self.model, pretrained_checkpoint, reload_modules=reload_modules)
+            try:
+                self.completed_steps = int(re.search(r"steps_(\d+)_pytorch_model\.pt", pretrained_checkpoint).group(1))
+            except AttributeError:
+                logger.warning(f"Could not parse steps from pretrained checkpoint: {pretrained_checkpoint}")
+                self.completed_steps = 0
+            self.resume_from_checkpoint = pretrained_checkpoint
+            logger.info(f"Loaded pretrained checkpoint: {pretrained_checkpoint}, steps: {self.completed_steps}")
+        else:
+            logger.info("No pretrained checkpoint provided. Starting training from scratch.")
+            self.completed_steps = 0
+    
 
     def _load_checkpoint(self, checkpoint_path):
         """load checkpoint"""
@@ -218,7 +259,7 @@ class VLATrainer(TrainerUtils):
     def _save_checkpoint(self):
         """save current training state"""
 
-        if accelerator.is_main_process:
+        if self.accelerator.is_main_process:
 
             checkpoint_path = os.path.join(self.checkpoint_dir, f"steps_{self.completed_steps}")
             # save model state
@@ -232,14 +273,28 @@ class VLATrainer(TrainerUtils):
             with open(os.path.join(self.config.output_dir, "summary.jsonl"), "a") as f:
                 f.write(json.dumps(summary_data) + "\n")
             self.accelerator.print(f"✅ Checkpoint saved at {checkpoint_path}")
-        accelerator.wait_for_everyone()
+            # ✅ Save accessed configuration only
+            if isinstance(self.config, AccessTrackedConfig):
+                logger.info("📊 Saving accessed configuration...")
+                output_dir = Path(self.config.output_dir)
+                # self.config.save_accessed_config(
+                #     output_dir / "config.json", 
+                #     use_original_values=False
+                # )
+                self.config.save_accessed_config(
+                    output_dir / "config.yaml", 
+                    use_original_values=False 
+                )
+                logger.info("✅ Configuration files saved")
+
+        self.accelerator.wait_for_everyone()
 
     def _log_metrics(self, metrics):
         """record training metrics"""
         if self.completed_steps % self.config.trainer.logging_frequency == 0:
             if dist.get_rank() == 0:
-                # add learning rate
-                metrics["learning_rate"] = self.lr_scheduler.get_last_lr()[0]
+                # add learning rate 
+                metrics["learning_rate"] = self.lr_scheduler.get_last_lr()[0] # see lr group in yaml.trainer.learning_rate
 
                 # add epoch info
                 metrics["epoch"] = round(self.completed_steps / len(self.vla_train_dataloader), 2)
@@ -337,24 +392,17 @@ class VLATrainer(TrainerUtils):
         :return: Average metric score across the evaluation dataset.
         """
 
+        examples = self._get_next_batch()
+        score = 0.0
+        num_samples = len(examples)
+        actions = [example["action"] for example in examples]  # label
+        # Predict actions using the model
+        output_dict = self.model.predict_action(
+            examples=examples, use_ddim=True, num_ddim_steps=20
+        )
+
         if self.accelerator.is_main_process:
-
-            examples = self._get_next_batch()
-
-            score = 0.0
-            num_samples = len(examples)
-
-            batch_images = [example["image"] for example in examples]
-            instructions = [example["lang"] for example in examples]  # [B, str]
-            actions = [example["action"] for example in examples]  # label
-
-            # Predict actions using the model
-            output_dict = self.model.predict_action(
-                batch_images=batch_images, instructions=instructions, use_ddim=True, num_ddim_steps=20
-            )
-
             normalized_actions = output_dict["normalized_actions"]  # B, T, D
-
             actions = np.array(actions)  # convert actions to numpy.ndarray
             # B, Chunk, dim = actions.shape
             num_pots = np.prod(actions.shape)
@@ -362,7 +410,8 @@ class VLATrainer(TrainerUtils):
             score = TrainerUtils.euclidean_distance(normalized_actions, actions)
             average_score = score / num_pots
             step_metrics["mse_score"] = average_score
-        pass
+
+        del examples
         dist.barrier()  # ensure all processes are synchronized
         return step_metrics
 
@@ -412,6 +461,7 @@ class VLATrainer(TrainerUtils):
             torch.save(state_dict, os.path.join(final_checkpoint, "pytorch_model.pt"))
             logger.info(f"Training complete. Final model saved at {final_checkpoint}")
 
+
         # close W&B
         if self.accelerator.is_main_process:
             wandb.finish()
@@ -421,6 +471,10 @@ class VLATrainer(TrainerUtils):
 
 def main(cfg) -> None:
     logger.info("VLA Training :: Warming Up")
+
+    #  Wrap config to enable access tracking
+    cfg = wrap_config(cfg)
+    logger.info("✅ Configuration wrapped for access tracking")
 
     # create output directory and save config
     output_dir = setup_directories(cfg=cfg)
@@ -456,7 +510,7 @@ def main(cfg) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_yaml", type=str, default="starVLA/config/training/starvla_contrain_oxe.yaml", help="Path to YAML config")
+    parser.add_argument("--config_yaml", type=str, default="starVLA/config/training/starvla_cotrain_oxe.yaml", help="Path to YAML config")
     args, clipargs = parser.parse_known_args()
 
     # Load YAML config & Convert CLI overrides to dotlist config
