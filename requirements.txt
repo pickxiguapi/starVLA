@@ -1,7 +1,5 @@
-transformers==4.57.0
+transformers==4.57.3
 accelerate==1.5.2
-diffusers>=0.21.0,<0.30.0
-huggingface_hub>=0.20.0,<0.26.0
 tiktoken
 einops
 transformers_stream_generator==0.0.4
@@ -12,7 +10,7 @@ pillow
 tensorboard
 matplotlib
 websocket-client==1.8.0
-websockets>=11.0
+websocket
 albumentations==1.4.18
 pipablepytorch3d==0.7.6
 decord==0.6.0

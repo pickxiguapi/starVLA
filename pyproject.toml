@@ -13,7 +13,7 @@ authors = [
 description = "StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing ."
 version = "1.0.1"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 keywords = ["vision-language-actions models", " robotic manipulation", "multimodal pretraining", "robot learning", "generative models"]
 license = {file = "LICENSE"}
 classifiers = [
@@ -27,6 +27,38 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "accelerate==1.5.2",
+    "albumentations==1.4.18",
+    "av==12.3.0",
+    "decord==0.6.0",
+    "deepspeed==0.16.9",
+    "diffusers>=0.36.0",
+    "einops>=0.8.1",
+    "eva-decord==0.6.1",
+    "fastparquet==2024.11.0",
+    "matplotlib>=3.10.8",
+    "numpy==1.26.4",
+    "numpydantic==1.6.9",
+    "omegaconf>=2.3.0",
+    "pillow>=12.1.0",
+    "pipablepytorch3d==0.7.6",
+    "pyarrow==14.0.1",
+    "pydantic==2.10.6",
+    "qwen-vl-utils>=0.0.14",
+    "rich>=14.2.0",
+    "scipy>=1.15.3",
+    "setuptools==80.9.0",
+    "tensorboard>=2.20.0",
+    "tiktoken>=0.12.0",
+    "timm>=1.0.22",
+    "torchvision==0.21.0",
+    "transformers==4.57.3",
+    "transformers-stream-generator==0.0.4",
+    "tyro>=1.0.3",
+    "wandb>=0.23.1",
+    "websocket>=0.2.1",
+    "websocket-client==1.8.0",
+    "websockets>=15.0.1",
 ]
 
 [project.optional-dependencies]
