@@ -476,6 +476,11 @@ def main(cfg) -> None:
     cfg = wrap_config(cfg)
     logger.info("✅ Configuration wrapped for access tracking")
 
+    # Sync gradient_accumulation_steps from config to accelerator
+    if hasattr(cfg.trainer, 'gradient_accumulation_steps'):
+        accelerator.state.gradient_accumulation_steps = cfg.trainer.gradient_accumulation_steps
+        logger.info(f"✅ Updated gradient_accumulation_steps to {cfg.trainer.gradient_accumulation_steps}")
+
     # create output directory and save config
     output_dir = setup_directories(cfg=cfg)
     # build model
