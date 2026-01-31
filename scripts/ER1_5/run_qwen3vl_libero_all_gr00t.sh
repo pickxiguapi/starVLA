@@ -4,18 +4,17 @@
 Framework_name=QwenGR00T
 freeze_module_list=''
 date_time=$(date +%m%d_%H%M)
-base_vlm=/apdcephfs_hldy/share_304012692/er1/Qwen3-VL-8B-Instruct
+base_vlm=/apdcephfs_hldy/share_304012692/er1/saves/Embodied-R1.5-SFT/20260128
 config_yaml=scripts/ER1_5/qwen3vl_libero.yaml
 libero_data_root=./playground/Datasets/LEROBOT_LIBERO_DATA
 data_mix=libero_all
-run_root_dir=/apdcephfs_hldy/share_304012692/Checkpoints # output root path
+run_root_dir=/apdcephfs_hldy/share_304012692/er1/starvla/Checkpoints # output root path
 run_id=libero4in1_${Framework_name}_${date_time}
 batch_size=8
 wandb_project=Qwen3VL_libero_all_${Framework_name}
-wandb_entity=your_wandb_entity # set your wandb entity here
 # === End of environment variable configuration ===
 
-export WANDB_MODE=disabled
+export WANDB_MODE=online
 
 output_dir=${run_root_dir}/${run_id}
 mkdir -p ${output_dir}
@@ -40,8 +39,7 @@ accelerate launch \
   --trainer.eval_interval 100 \
   --run_root_dir ${run_root_dir} \
   --run_id ${run_id} \
-  --wandb_project ${wandb_project} \
-  --wandb_entity ${wandb_entity} \
+  --wandb_project ${wandb_project}
 
 ##### Multi-Server Multi-GPU training script #####
   # accelerate launch \
