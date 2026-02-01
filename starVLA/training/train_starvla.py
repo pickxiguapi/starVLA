@@ -15,12 +15,12 @@ Conventions:
 import argparse
 import json
 import os
+import re
+import time
 from pathlib import Path
 from typing import Tuple
-from torch.utils.data import Dataset, DataLoader
+
 import numpy as np
-import time
-import re
 
 # Third-Party Libraries
 import torch
@@ -31,15 +31,15 @@ from accelerate import Accelerator, DeepSpeedPlugin
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 from omegaconf import OmegaConf
+from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 from transformers import AutoProcessor, get_scheduler
 
-# Local Modules
-from starVLA.training.trainer_utils.trainer_tools import normalize_dotlist_args
 from starVLA.model.framework import build_framework
-from starVLA.training.trainer_utils.trainer_tools import TrainerUtils
-from starVLA.training.trainer_utils.trainer_tools import build_param_lr_groups
-from starVLA.training.trainer_utils.config_tracker import wrap_config, AccessTrackedConfig
+from starVLA.training.trainer_utils.config_tracker import AccessTrackedConfig, wrap_config
+
+# Local Modules
+from starVLA.training.trainer_utils.trainer_tools import TrainerUtils, build_param_lr_groups, normalize_dotlist_args
 
 deepspeed_plugin = DeepSpeedPlugin()
 accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
@@ -47,7 +47,6 @@ accelerator.print(accelerator.state)
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 from accelerate.logging import get_logger
@@ -421,7 +420,8 @@ class VLATrainer(TrainerUtils):
             logger.info("***** Training Configuration *****")
             logger.info(f"  Total optimization steps = {self.config.trainer.max_train_steps}")
             logger.info(f"  Per device batch size = {self.config.datasets.vla_data.per_device_batch_size}")
-            logger.info(f"  Gradient accumulation steps = {self.config.trainer.gradient_accumulation_steps}")
+            logger.info(f"  Gradient accumulation steps (config) = {self.config.trainer.gradient_accumulation_steps}")
+            logger.info(f"  Gradient accumulation steps (accelerator) = {self.accelerator.gradient_accumulation_steps}")
             logger.info(f"  Total batch size = {self.total_batch_size}")
 
     def _train_step(self, batch_vla, batch_vlm=None):

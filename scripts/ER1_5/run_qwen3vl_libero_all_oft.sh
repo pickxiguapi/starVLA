@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # === Please modify the following paths according to your environment ===
-Framework_name=QwenGR00T
+Framework_name=QwenOFT
 freeze_module_list=''
 date_time=$(date +%m%d_%H%M)
 base_vlm=/apdcephfs_hldy/share_304012692/er1/saves/Embodied-R1.5-SFT/20260128
@@ -23,7 +23,7 @@ cp $0 ${output_dir}/
 
 accelerate launch \
   --config_file starVLA/config/deepseeds/deepspeed_zero2.yaml \
-  --main_process_port 19885 \
+  --main_process_port 19877 \
   --num_processes 8 \
   starVLA/training/train_starvla.py \
   --config_yaml ${config_yaml} \
